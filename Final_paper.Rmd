@@ -1,0 +1,568 @@
+---
+title: "Emotion Perception in Music --- Contribution of Primary Music Cues: Critique and Remodelling"
+author: "Echo Liu"
+date: "December 5, 2018"
+output: html_document
+---
+
+### Background Information:
+&nbsp;&nbsp;Collecting music emotion data is a very subjective process, since people have different understandings of one piece of music under different contexts and associate music with their memories and life experience. In the research field of music emotion, researchers often separate extra-musical factors with factors inherent in music that cause emotions to be perceived by listeners.  
+  
+&nbsp;&nbsp;T. Eerola, in order to study the latter aspect, conducted an optimized fractional factorial study on 7 primary cues and collected emotional ratings by 46 participants on a total of 200 musical samples according to 4 percieved emotional characers (happy, sad, scary and peaceful). In his paper "Emotional expression in music: contribution, linearity, and additivity of primary musical cues", Eerola argued that many primary cues contributed to emotion in a linear and non-interactive fashion. However, my exploration of this dataset yields a different result, contradicting his linearity of cue levels argument.
+
+**Fractional factorial design:**
+A full factorial experiment is an experiment whose design consists of two or more factors, each with discrete possible values or "levels", and whose experimental units take on all possible combinations of these levels across all such factors (wiki). If T.Erola is going to conduct a full factorial experiment, he needs to manipulate $6 \times 2 \times 5 \times 5 \times 4 \times 3 \times 4 = 14400$ musical samples. Instead, he did an optimized fractional factorial study with 200 musical samples that he claimed could "allow the research resources to be concentrated on particular questions, thereby minimizing redundancy and maximizing the statistical power". However, I doubt if some interaction effects are effaced in this reduction process.
+
+
+### Research Question:
+* How do primary cues contibute to different emotional expressions in music?
+* Can we predict both happiness and sadness rating for music given single set of primary cues?
+* Limitation of T. Eerola's original model
+
+
+### Data set 
+Outcome Variables | Description
+------------- | -------------
+Sad, Happy, Scary and Peaceful | Emotion ratings for sadness, happiness, scariness and peacefulness
+
+
+Predictor Variables | Description
+------------- | -------------
+Register (6 scalar levels) | Whole piece was transposed so that the average pitches of the melody were the following: F3, B3, F4, B4, F5, B5/ 53, 59, 65, 71, 77 and 83 in MIDI pitch 
+Mode (2 factor levels) | 1 =  Major, 2 = Minor  
+Tempo (5 scalar levels) | Average number of non-simultaneous onsets per second (1.2, 2, 2.8, 4.4 and 6 NPS)
+Sound Level (5 scalar levels) |  -10, -5, 0, +5, +10 dB
+Articulation (4 scalarlevels) | Duration of a note relative to its interonset interval
+Timbre (3 scalar levels) | The estimation of brightness: 1 = flute, 2 = horn, 3 = trumpet
+Music Structure (4 factor categories) | 1 = Sad, 2 = Happy, 3 = Scary, 4 = Peaceful
+
+
+### Exploratory Data Analysis 
+```{r, echo = FALSE, message = FALSE}
+library(tidyverse)
+library(lattice)
+
+design_matrix <- read.csv("C:/Users/Echo Liu/Downloads/Duke University/1st semester/702_Modeling_and_Representation/Final Individual Project/music and emotion/design_matrix.csv", stringsAsFactors=FALSE)
+mean_emotion_ratings <- read.csv("C:/Users/Echo Liu/Downloads/Duke University/1st semester/702_Modeling_and_Representation/Final Individual Project/music and emotion/mean_emotion_ratings.csv", stringsAsFactors=FALSE)
+
+music_emotion <- mean_emotion_ratings %>%
+  left_join(design_matrix, by ="Nro")
+
+#summary(music_emotion)
+
+music_emotion$Mode <- as.factor(music_emotion$Mode) 
+music_emotion$Melody <- as.factor(music_emotion$Melody) 
+#reorder Timbre from darkness to brightness of instruments
+music_emotion$Timbre[music_emotion$Timbre == 1] <- 4
+music_emotion$Timbre[music_emotion$Timbre == 2] <- 1
+music_emotion$Timbre[music_emotion$Timbre == 3] <- 2
+music_emotion$Timbre[music_emotion$Timbre == 4] <- 3
+
+head(music_emotion)
+```
+
+
+**1. Correlation between perceived emotions**
+
+```{r, echo = FALSE, message = FALSE}
+library(ggplot2)
+library(GGally)
+library(reshape2)
+
+ggpairs(music_emotion, columns = c(2:5))
+cor(music_emotion[,c(6, 8:11)])
+```
+
+Happy is weakly correlated with peaceful (corr=0.212) and correlated negatively with Sad (corr=-0.789) as well as Scary (corr=-0.567). Sad is weakly correlated with peaceful (corr=0.163) and shows almost no correlation with scary. Peaceful is significantly correlated with scary in a negative fashion.   
+
+A quick check of correlations between predictor variables shows no multicollinearity problem.  
+
+**2. Emotion ratings and Cue Levels**
+```{r, echo = FALSE}
+ggduo(
+  data = music_emotion, columnsX = 6:12,
+  columnsY = 2:5,
+  mapping = aes(color = "slateblue1"),
+  types = list(continuous = "smooth_lm"),
+  title = "Exploratory Plots for Emotion Ratings and Musical cues",
+  xlab = "Musical Cues",
+  ylab = "Emotion ratings"
+)
+```
+
+**3. Individual Cue's Contribution for Mean Emotion Rating**
+```{r, echo = FALSE, message = FALSE}
+require(MASS)
+require(dplyr)
+require(gridExtra)
+mean_fun <- function(data, cue){
+  require("dplyr")
+  dataset <- data %>% 
+  dplyr::select(Scary: Peaceful, cue) %>% 
+  group_by_(cue) %>% 
+  summarize(Scary = mean(Scary),
+            Happy = mean(Happy),
+            Sad = mean(Sad),
+            Peaceful = mean(Peaceful))
+  return(dataset)
+}
+
+##Register
+mean_register <- mean_fun(music_emotion, "Register")
+melt_register <- melt(mean_register, id.vars="Register")
+plot1 <- ggplot(melt_register, aes(x= Register, y= value, color = variable))+ 
+  geom_line() +
+  geom_point()+
+  xlab("MIDI Note")+
+  ggtitle("Register")+
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+##Mode
+mean_mode <- mean_fun(music_emotion, "Mode")
+melt_mode <- melt(mean_mode, id.vars="Mode")
+plot2 <- ggplot(melt_mode, aes(x= Mode, y= value, color = variable, group = variable))+ 
+  geom_path() +
+  geom_point()+
+  xlab("Major/Minor")+
+  ggtitle("Mode")+
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+##Tempo
+mean_tempo <- mean_fun(music_emotion, "Tempo")
+melt_tempo <- melt(mean_tempo, id.vars="Tempo")
+plot3 <- ggplot(melt_tempo, aes(x= Tempo, y= value, color = variable))+ 
+  geom_line() +
+  geom_point()+
+  xlab("Notes per second")+
+  ggtitle("Tempo")+
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+##Soundlevel
+mean_sl <- mean_fun(music_emotion, "Soundlevel")
+melt_sl <- melt(mean_sl, id.vars="Soundlevel")
+plot4 <- ggplot(melt_sl, aes(x= Soundlevel, y= value, color = variable))+ 
+  geom_line() +
+  geom_point()+
+  xlab("dB")+
+  ggtitle("Soundlevel")+
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+##Articulation
+mean_arti <- mean_fun(music_emotion, "Articulation")
+melt_arti <- melt(mean_arti, id.vars="Articulation")
+plot5 <- ggplot(melt_arti, aes(x= Articulation, y= value, color = variable))+ 
+  geom_line() +
+  geom_point()+
+  xlab("Relative duration")+
+  ggtitle("Articulation")+
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+##Timbre
+mean_timbre <- mean_fun(music_emotion, "Timbre")
+melt_timbre <- melt(mean_timbre, id.vars="Timbre")
+plot6 <- ggplot(melt_timbre, aes(x= Timbre, y= value, color = variable))+ 
+  geom_line() +
+  geom_point()+
+  xlab("Flute/French Horn/ Trumpet")+
+  ggtitle("Timbre")+
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+##Melody
+mean_melody <- mean_fun(music_emotion, "Melody")
+melt_melody <- melt(mean_melody, id.vars="Melody")
+plot7 <- ggplot(melt_melody, aes(x= Melody, y= value, color = variable, group = variable))+ 
+  geom_line() +
+  geom_point()+
+  xlab("Peaceful/Happy/Scary/Sad")+
+  ggtitle("Melody")+
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+grid.arrange(plot1, plot2, plot3, plot4,ncol=2)
+grid.arrange(plot5, plot6, plot7, ncol=2)
+```
+
+As a final step for exploratory analysis, I calculate the mean rating for four emotions grouping by each of the predictor variable. Graphs below show clear patterns across the levels for four emotions. For instance, major mode corresponds to music with higher happiness rating and minor mode corresponds to higher sadness rating. Register impacts happy and scary emotions notably. Music with happier mood leans towards a higher register while music with higher scariness rating lean towards a lower register. We can find similar patterns appeared in plots for other variables as well: tempo, soundlevel,timbre and melody, although emotions and directions of cue levels are different. 
+
+### Modelling
+#### Stage 1 (No transformation): Run a simple linear regression on each of the four emotions
+```{r, message = FALSE}
+library(memisc)
+music_emotion$Mode <- as.numeric(music_emotion$Mode) 
+music_emotion$Melody <- as.numeric(music_emotion$Melody) 
+
+reghappy <- lm(Happy ~ Register + as.factor(Mode) + Tempo + Soundlevel +Articulation + Timbre + as.factor(Melody), data = music_emotion)
+par(mfrow = c(2,2))
+plot(reghappy)
+
+regscary <- lm(Scary ~ Register + as.factor(Mode) + Tempo + Soundlevel +Articulation + Timbre + as.factor(Melody), data = music_emotion)
+par(mfrow = c(2,2))
+plot(regscary)
+
+regsad <- lm(Sad ~ Register + as.factor(Mode) + Tempo + Soundlevel +Articulation + Timbre + as.factor(Melody), data = music_emotion)
+par(mfrow = c(2,2))
+plot(regsad)
+
+regpeaceful <- lm(Peaceful ~ Register + as.factor(Mode) + Tempo + Soundlevel +Articulation + Timbre + as.factor(Melody), data = music_emotion)
+par(mfrow = c(2,2))
+plot(regsad)
+```
+
+  T. Eerola seemed to make a fatal mistake by not checking residual plots for all the regression models he made. The residual versus fitted value plot above shows a quadratic trend (LOESS function is not a horizontal line) and also a fanning problem for outcome variable happy. The same problem exists in all four regressions for emotions. Even though later on Eerola tried quadratic and even cubic numerical variables such as Register and Tempo, the fact that non-constant variance assumption wasn't met was the biggest problem hindering him to make correct conclusions. His linearity of cue level argument was challenged.
+
+#### Stage 2 (Final model): log encoding for all emotional expressions, quadratic encoding for "Register, Tempo and Timbre" in some of the emotional expressions
+
+
+```{r, echo = FALSE}
+#Make Register squared and log the emotion variables
+music_emotion$Register2 <- music_emotion$Register^2
+music_emotion$Timbre2 <- music_emotion$Timbre^2
+music_emotion$Tempo2 <- music_emotion$Tempo^2
+music_emotion$loghappy <- log(music_emotion$Happy)
+
+regloghappy <- lm(loghappy ~ Register + as.factor(Mode) + Tempo + Soundlevel +Articulation + Timbre + as.factor(Melody), data = music_emotion)
+# summary(regloghappy)
+# par(mfrow = c(2,2))
+# plot(regloghappy)
+
+#It seems to me that for happy mode, soundlevel is not as important as other variables, let's do some nested f test.
+regNoSoundlevel <- lm(loghappy ~ Register + as.factor(Mode) + Tempo + Articulation + Timbre + as.factor(Melody), data = music_emotion)
+anova(regloghappy, regNoSoundlevel)
+# summary(regNoSoundlevel)
+par(mfrow = c(2,2))
+plot(regloghappy)
+##The fact that F statistic is pretty big shows that soundlevel has little association with happy mood.
+
+music_emotion$logscary <- log(music_emotion$Scary)
+reglogscary2 <- lm(logscary ~ Register + Register2 + as.factor(Mode) + Tempo + Soundlevel +Articulation + Timbre + as.factor(Melody), data = music_emotion)
+# summary(reglogscary2)
+par(mfrow = c(2,2))
+plot(reglogscary2)
+
+#It seems to me that for scary mode, articulation is not as important as other variables, let's do some nested f test.
+regNoArticulationlevel <- lm(logscary ~ Register + Register2 + as.factor(Mode) + Tempo + Soundlevel + Timbre + as.factor(Melody), data = music_emotion)
+anova(reglogscary2, regNoArticulationlevel)
+##The fact that F statistic is pretty big shows that soundlevel has little association with happy mood.
+# summary(regNoArticulationlevel)
+
+music_emotion$logsad <- log(music_emotion$Sad)
+reglogsad <- lm(logsad ~ Register + as.factor(Mode) + Tempo + Soundlevel +Articulation + Timbre + as.factor(Melody), data = music_emotion)
+# summary(reglogsad)
+par(mfrow = c(2,2))
+plot(reglogsad)
+
+music_emotion$logpeaceful <- log(music_emotion$Peaceful)
+reglogpeaceful2 <- lm(logpeaceful ~ Register + Register2 + as.factor(Mode) + Tempo + Tempo2 + Soundlevel +Articulation + Timbre + Timbre2 + as.factor(Melody), data = music_emotion)
+# summary(reglogpeaceful2)
+par(mfrow = c(2,2))
+plot(reglogpeaceful2)
+
+logetable <- mtable("Model 1"=regNoSoundlevel,"Model 2"=regNoArticulationlevel,"Model 3"=reglogsad,"Model 4" = reglogpeaceful2,
+                 summary.stats=c("sigma","R-squared","F","p","N"))
+logetable
+```
+
+```{r}
+#Try an interaction effect 
+xyplot(loghappy ~ Register | as.factor(Mode), data = music_emotion)
+xyplot(loghappy ~ Tempo | as.factor(Mode), data = music_emotion)
+xyplot(logsad ~ Register | as.factor(Mode), data = music_emotion)
+xyplot(logpeaceful ~ Register | as.factor(Mode), data = music_emotion)
+bwplot(loghappy ~ Melody | as.factor(Mode), data = music_emotion) 
+#It doesn't seem to be an interaction effect in this case.
+```
+
+
+
+**confidence intervals**
+```{r, echo =FALSE}
+exp(confint(regNoSoundlevel))
+exp(confint(regNoArticulationlevel))
+exp(confint(reglogsad))
+exp(confint(reglogpeaceful2))
+```
+
+
+**Residual Plots checking**
+```{r, echo = FALSE}
+par(mfrow = c(2,2))
+plot(y = regNoSoundlevel$residuals, x = music_emotion$Register, ylab = "Residuals")
+boxplot(regNoSoundlevel$residuals ~ music_emotion$Mode, ylab = "Residuals")
+plot(y = regNoSoundlevel$residuals, x = music_emotion$Tempo, ylab = "Residuals")
+plot(y = regNoSoundlevel$residuals, x = music_emotion$Soundlevel, ylab = "Residuals")
+plot(y = regNoSoundlevel$residuals, x = music_emotion$Articulation, ylab = "Residuals")
+plot(y = regNoSoundlevel$residuals, x = music_emotion$Timbre, ylab = "Residuals")
+boxplot(regNoSoundlevel$residuals ~ music_emotion$Melody, ylab = "Residuals")
+
+par(mfrow = c(1,1))
+par(mfrow = c(2,2))
+plot(y = regNoArticulationlevel$residuals, x = music_emotion$Register, ylab = "Residuals")
+boxplot(regNoArticulationlevel$residuals ~ music_emotion$Mode, ylab = "Residuals")
+plot(y = regNoArticulationlevel$residuals, x = music_emotion$Tempo, ylab = "Residuals")
+plot(y = regNoArticulationlevel$residuals, x = music_emotion$Soundlevel, ylab = "Residuals")
+plot(y = regNoArticulationlevel$residuals, x = music_emotion$Articulation, ylab = "Residuals")
+plot(y = regNoArticulationlevel$residuals, x = music_emotion$Timbre, ylab = "Residuals")
+boxplot(regNoArticulationlevel$residuals ~ music_emotion$Melody, ylab = "Residuals")
+
+par(mfrow = c(1,1))
+par(mfrow = c(2,2))
+plot(y = reglogsad$residuals, x = music_emotion$Register, ylab = "Residuals")
+boxplot(reglogsad$residuals ~ music_emotion$Mode, ylab = "Residuals")
+plot(y = reglogsad$residuals, x = music_emotion$Tempo, ylab = "Residuals")
+plot(y = reglogsad$residuals, x = music_emotion$Soundlevel, ylab = "Residuals")
+plot(y = reglogsad$residuals, x = music_emotion$Articulation, ylab = "Residuals")
+plot(y = reglogsad$residuals, x = music_emotion$Timbre, ylab = "Residuals")
+boxplot(reglogsad$residuals ~ music_emotion$Melody, ylab = "Residuals")
+
+par(mfrow = c(1,1))
+par(mfrow = c(2,2))
+plot(y = reglogpeaceful2$residuals, x = music_emotion$Register, ylab = "Residuals")
+boxplot(reglogpeaceful2$residuals ~ music_emotion$Mode, ylab = "Residuals")
+plot(y = reglogpeaceful2$residuals, x = music_emotion$Tempo, ylab = "Residuals")
+plot(y = reglogpeaceful2$residuals, x = music_emotion$Soundlevel, ylab = "Residuals")
+plot(y = reglogpeaceful2$residuals, x = music_emotion$Articulation, ylab = "Residuals")
+plot(y = reglogpeaceful2$residuals, x = music_emotion$Timbre, ylab = "Residuals")
+boxplot(reglogpeaceful2$residuals ~ music_emotion$Melody, ylab = "Residuals")
+
+```
+
+  In order to satisfy the non-constant variance assumption, I logarithmized all the outcome variables. To correct quadratic trends in residual plots for emotional expression log(scay) and log(peaceful), I also added quadratic terms. Specifically, I added register^2^ in scary model and register^2^, timbre^2^ and tempo^2^ in peaceful model. Careful check of interaction plots shows no interesting interaction between musical cues. I'm satisfied with these models since most predictors have really significant p-values and r-squares for these set of models are between 0.879 to 0.933.  
+  
+  However, in the second stage of Eerola's modelling, he essentially did regressions with quadratic/cubic encodings of all numerical variables (register, tempo, soundlevel, articulation, and timbre), which is obviously overfitting the data. Quadratic terms for a particular variable should be properly added if the residual plot of that variable shows any curve trend.
+
+
+#### Conclusions  
+##### Happiness
+An increase in **register** of 1 level is associated with a multiplicative change of $e^{0.087} \approx 1.09$ (95% CI: 1.08, 1.10) in happiness rating.  
+Changing **mode** from major to minor is associated with a multiplicative change of $e^{-0.69} \approx 0.50$ (95% CI: 0.48, 0.51)in happiness rating.  
+An increase in **tempo** of 1 level is associated with a multiplicative change of $e^{0.12} \approx 1.13$ (95% CI: 1.11, 1.14)in happiness rating.  
+An increase in duration of a note (**articulation**) of 1 level is associated with a multiplicative change of $e^{0.07} \approx 1.07$ (95% CI: 1.06, 1.09)in happiness rating.  
+An increase in **brightness of timbre** of 1 level is associated with a multiplicative change of $e^{-0.02} \approx 0.98$ (95% CI: 0.96, 1.00) in happiness rating.  
+Changing **melody** from **sad to happy** is associated with a multiplicative change of $e^{0.19} \approx 1.2$ (95% CI: 1.15, 1.26) in happiness rating.  
+Changing melody from **sad to scary** is associated with a multiplicative change of $e^{-0.29} \approx 0.75$ (95% CI: 0.71, 0.78) in happiness rating.  
+Changing melody from **sad to peaceful** is associated with a multiplicative change of $e^{-0.05} \approx 0.95$ (95% CI: 0.90, 1.00) in happiness rating.  
+The fact that F statistic is pretty big shows that soundlevel has little association with happy mood.      
+Mode seems extremely important for happy music. And if we are to rank importance for other predictors, than the order would be melody, tempo, register, articulation and timbre.
+
+##### Scariness
+Changing **mode** from major to minor is associated with a multiplicative change of $e^{0.34} \approx 1.4$ (95% CI: 1.34, 1.46) in scariness rating.  
+An increase in **tempo** of 1 level is associated with a multiplicative change of $e^{0.036} \approx 1.04$ (95% CI: 1.02, 1.05) in scariness rating.  
+An increase in **soundlevel** of 5 dB is associated with a multiplicative change of $e^{0.11} \approx 1.12$ (95% CI: 1.10, 1.14) in scariness rating.  
+An increase in **brightness of timbre** of 1 level is associated with a multiplicative change of $e^{0.1} \approx 1.1$ (95% CI: 1.07, 1.13) in scariness rating.  
+Changing **melody** from **sad to happy** is associated with a multiplicative change of $e^{-0.1} \approx 0.90$ (95% CI: 0.85, 0.96) in scariness rating.  
+Changing melody from **sad to scary** is associated with a multiplicative change of $e^{0.7} \approx 2$ (95% CI: 1.99, 2.25) in scariness rating.  
+Changing melody from **sad to peaceful** is associated with a multiplicative change of $e^{-0.05} \approx 0.95$ (95% CI: 0.89, 1.02) in scariness rating.  
+The fact that F statistic is 0.382 shows that articulation has little association with log(scary).  
+Quadratic effect of register is shown in the plot.
+
+Mode and melody are extremely important for fearful music. And if we are to rank importance for other predictors, than the order would be soundlevel, timbre and tempo.
+
+##### Sadness
+An increase in **register** of 1 level is associated with a multiplicative change of $e^{-0.022} \approx 0.98$ (95% CI: 0.97, 0.99) in sadness rating.  
+Changing **mode** from major to minor is associated with a multiplicative change of $e^{0.62} \approx 1.86$ (95% CI: 1.79, 1.93) in sadness rating.  
+An increase in **tempo** of 1 level is associated with a multiplicative change of $e^{-0.13} \approx 0.87$(95% CI: 0.86, 0.89) in sadness rating. 
+An increase in **soundlevel** of 5 dB is associated with a multiplicative change of $e^{-0.02} \approx 0.98$ (95% CI: 0.97, 0.99) in scariness rating.  
+An increase in duration of a note (**articulation**) of 1 level is associated with a multiplicative change of $e^{-0.07} \approx 0.93$ (95% CI: 0.92, 0.95) in sadness rating.  
+An increase in **brightness of timbre** of 1 level is associated with a multiplicative change of $e^{-0.03} \approx 0.9$ (95% CI: 0.95, 0.99) in sadness rating.  
+Changing **melody** from **sad to happy** is associated with a multiplicative change of $e^{-0.16} \approx 0.85$ (95% CI: 0.81, 0.89) in sadness rating.  
+Changing melody from **sad to scary** is associated with a multiplicative change of $e^{-0.17} \approx 0.84$ (95% CI: 0.80,0.88) in sadness rating.  
+Changing melody from **sad to peaceful** is associated with a multiplicative change of $e^{0.03} \approx 1.03$ (95% CI: 0.98, 1.09) in sadness rating.  
+
+Mode is extremely important in sad music. And if we are to rank importance for other predictors, than the order would be melody, tempo, timbre, articulation, soundlevel and register.
+
+##### Peacefulness
+Changing **mode** from major to minor is associated with a multiplicative change of $e^{-0.17} \approx 0.84$ (95% CI: 0.82,0.88) in peacefulness rating.  
+An increase in **soundlevel** of 5 dB is associated with a multiplicative change of $e^{0.11} \approx 1.12$ (95% CI: 0.90,0.91) in peacefulness rating.  
+An increase in duration of a note (**articulation**) of 1 level is associated with a multiplicative change of $e^{-0.03} \approx 0.97$ (95% CI: 0.96,0.99) in sadness rating.  
+Changing **melody** from **sad to happy** is associated with a multiplicative change of $e^{-0.05} \approx 0.95$ (95% CI: 0.91,1.00) in peacefulness rating.  
+Changing melody from **sad to scary** is associated with a multiplicative change of $e^{-0.5} \approx 0.61$ (95% CI: 0.59,0.65) in peacefulness rating.  
+Changing melody from **sad to peaceful** is associated with a multiplicative change of $e^{-0.07} \approx 0.93$ (95% CI: 0.88,0.98) in peacefulness rating.  
+Quadratic effect of register, tempo and timbre are shown in the plot.  
+
+Mode and melody are extremely important in peaceful music. And if we are to rank importance for other predictors, than the order would be soundlevel and articulation.
+
+```{r,echo = FALSE}
+##Quadratic plots 1: Scariness
+#first we make 6 values of years in the regression
+newregister_1 = c(1, 2, 3, 4, 5, 6)
+
+#now create the squared values, since we use those in the regression
+newregister_12 = newregister_1^2
+
+newdata1 = matrix(0, nrow = 6, ncol = 7)
+
+newdata1 = data.frame(newdata1)
+names(newdata1) = names(music_emotion)[c(6:9, 11:13)]
+
+#now we replace the column
+newdata1[,1] = newregister_1
+newdata1[,7] = newregister_1^2
+newdata1[,2] = 2
+newdata1[,3] = 3
+newdata1[,4] = 4
+newdata1[,5] = 2
+newdata1[,6] = 3
+#head(newdata)
+
+preds1 = predict.lm(regNoArticulationlevel, newdata1, interval = "confidence")
+exp_preds1 = exp(preds1)
+
+#plot the predicted values versus YearCent
+plot(y = exp_preds1[,1], x = newregister_1, xlab ="Register", ylab = "Predicted Mean log scariness rating", main = "Expected Change in Log Scariness Rating with Register", type = "l")
+#######################################################################
+##Quadratic plots 2 and 3: Peacefulness
+newdata2 = matrix(0, nrow = 6, ncol = 10)
+
+newdata2 = data.frame(newdata2)
+names(newdata2) = names(music_emotion)[c(6:15)]
+
+#now we replace the column
+newdata2[,1] = newregister_1
+newdata2[,8] = newregister_1^2
+newdata2[,2] = 1
+newdata2[,3] = 2
+newdata2[,4] = 2
+newdata2[,5] = 1
+newdata2[,6] = 1
+newdata2[,7] = 4
+newdata2[,9] = 1
+newdata2[,10] = 4
+#head(newdata)
+
+preds2 = predict.lm(reglogpeaceful2, newdata2, interval = "confidence")
+exp_preds2 = exp(preds2)
+
+#plot the predicted values versus YearCent
+plot(y = exp_preds2[,1], x = newregister_1, xlab ="Register", ylab = "Predicted Mean log peacefulness rating", main = "Expected Change in Log Peacefulness Rating with Register", type = "l")
+#####################################################################################
+#first we make 6 values of years in the regression
+newtempo_1 = c(1, 2, 3, 4, 5)
+
+#now create the squared values, since we use those in the regression
+newtempo_12 = newtempo_1^2
+
+newdata3 = matrix(0, nrow = 5, ncol = 10)
+
+newdata3 = data.frame(newdata3)
+names(newdata3) = names(music_emotion)[c(6:15)]
+
+#now we replace the column
+newdata3[,3] = newtempo_1
+newdata3[,10] = newtempo_12^2
+newdata3[,1] = 3
+newdata3[,2] = 1
+newdata3[,4] = 2
+newdata3[,5] = 1
+newdata3[,6] = 1
+newdata3[,7] = 4
+newdata3[,8] = 9
+newdata3[,9] = 1
+#head(newdata)
+
+preds3 = predict.lm(reglogpeaceful2, newdata3, interval = "confidence")
+exp_preds3 = exp(preds3)
+
+#plot the predicted values versus YearCent
+plot(y = exp_preds3[,1], x = newtempo_1, xlab ="Tempo", ylab = "Predicted Mean log peacefulness rating", main = "Expected Change in Log Peacefulness Rating with Tempo", type = "l")
+
+##Since timbre has few levels, we temporarily ignored it.
+```
+
+### Stage 3: Multivariate linear regression between happiness and sadness
+
+#### Model
+  Multivariate multiple regression is the method of modeling multiple response variables with a single set of predictor variables. I would like to model both happiness and sadness level as a function of register, mode, tempo, soundlevel and etc. Multivariate Multiple Regression is very similar with running separate regressions with each outcome variables. The only difference lies in hypothese tests for regression parameters and confidence interval for prediction.  
+  Let's run a multivariate linear regression for loghappy and logsad.
+
+```{r, echo = FALSE, message = FALSE}
+mlm <- lm(cbind(loghappy, logsad) ~ Register + as.factor(Mode) + Tempo + Soundlevel + Articulation + Timbre + as.factor(Melody), data = music_emotion)
+summary(mlm)
+```
+
+  Summary results are the same as running separate regressions (refer to my appendix).But coefficients from two models covary when we check the variance-covariance matrix and we should consider covariance when determining if a predictor is jointly contributing to both models. The effect of soundlevel doesn't seem to be significant in loghappy. Thus, we need to formally test whether to include soundlevel in multivariate model using Anova command.
+
+```{r , echo = FALSE, message = FALSE}
+# variance covariance matrix
+vcov(mlm)
+library(car)
+Anova(mlm)
+```
+
+Soundlevel appears to be jointly significant for the multivariate models though in individual loghappy model it seems not as important as other predictors. P-value for soundlevel is 0.002651.  
+
+**Residual Plots Checking (logsad was checked above)**
+```{r}
+par(mfrow = c(1,1))
+par(mfrow = c(2,2))
+plot(y = regloghappy$residuals, x = music_emotion$Register, ylab = "Residuals")
+boxplot(regloghappy$residuals ~ music_emotion$Mode, ylab = "Residuals")
+plot(y = regloghappy$residuals, x = music_emotion$Tempo, ylab = "Residuals")
+plot(y = regloghappy$residuals, x = music_emotion$Soundlevel, ylab = "Residuals")
+plot(y = regloghappy$residuals, x = music_emotion$Articulation, ylab = "Residuals")
+plot(y = regloghappy$residuals, x = music_emotion$Timbre, ylab = "Residuals")
+boxplot(regloghappy$residuals ~ music_emotion$Melody, ylab = "Residuals")
+```
+
+#### Prediction
+
+Let's try to predict happiness and sadness rating of a piece of music with Register = 83 in MIDI pitch, Mode = major, Tempo = 4.4 NPS, Soundlevel = -5dB, Articulation = staccato, Timbre = horn and Melody = peaceful.
+
+```{r, message = FALSE, echo =FALSE}
+###Ellipse
+nd <- data.frame(Register = 6, Mode = 1, Tempo = 4, Soundlevel = 2, Articulation = 4, Timbre =2, Melody = 4)
+  # labels
+  lev_lbl <- paste0(0.95 * 100, "%")
+  title <- paste(lev_lbl, "confidence ellipse for happiness rating and sadness rating")
+  
+  # prediction
+  p <- exp(predict(mlm, nd))
+  
+  # center of ellipse
+  cent <- c(p[1,1],p[1,2])
+  
+  # shape of ellipse
+  Z <- model.matrix(mlm)
+  Y <- exp(mlm$model[[1]])
+  n <- nrow(Y)
+  m <- ncol(Y)
+  r <- ncol(Z) - 1
+  S <- crossprod(resid(mlm))/(n-r-1)
+  
+  # radius of circle generating the ellipse
+  z0 <- c(1, 6, 0, 4, 2, 4, 2, 0, 0, 1)
+  rad <- sqrt((m*(n-r-1)/(n-r-m))*qf(0.95,m,n-r-m)*t(z0)%*%solve(t(Z)%*%Z) %*% z0)
+  
+  # generate ellipse using ellipse function in car package
+  ell_points <- car::ellipse(center = c(cent), shape = S, radius = c(rad), draw = FALSE)
+  
+  # ggplot2 plot
+    require(ggplot2, quietly = TRUE)
+    ell_points_df <- as.data.frame(ell_points)
+    ggplot(ell_points_df, aes(x, y)) +
+      geom_path() +
+      geom_point(aes(x = loghappy, y = logsad), data = data.frame(p)) +
+      labs(x = "Happiness Rating", y = "Sadness Rating", 
+           title = title)
+```
+
+This is a 95% confidence ellipse for happiness and sadness rating, which is equivalent to confidence interval in 1d setting. Black dot in the center is our predicted value for happy and sad. We're 95% confident that the true values of happy and sad when Register = 6, Mode = 1, Tempo = 4, Soundlevel = 2, Articulation = 4, Timbre = 2 and Melody = 4 are within area of the ellipse. Happy and sad are negatively correlated. Predicting higher rating of happiness means predicting lower rating of sadness, and vice versa.
+
+
+Limitation of original study by T. Eerola:
+* T. Eerola didn't checking residual plots for all the regression models he made. Residual plots of his final model (plain linear regression) has non-constant variance problem. I remodelled the same set of data by observing patterns in exploratory process and carefully checking residual plots.
+* Eerola overfit this data set in the second stage by quadratic/cubic encoding all numerical variables.
+* An optimized fractional factorial design might in its nature exclude interaction effect between variables.
+
+
+
+Reference: 
+Citation: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3726864/
+          https://data.library.virginia.edu/getting-started-with-multivariate-multiple-regression/
+          https://en.wikipedia.org/wiki/Factorial_experiment
+          
